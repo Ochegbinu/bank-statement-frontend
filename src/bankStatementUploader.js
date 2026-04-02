@@ -80,12 +80,36 @@ const BankStatementUploader = () => {
     }
 
     try {
-      const date = new Date(dateValue);
+      let date;
+      
+      // Check if the value is a number (Excel serial date)
+      if (typeof dateValue === 'number') {
+        // Excel uses different epoch dates:
+        // - Windows Excel: December 30, 1899 (serial 0 = 1900-01-00)
+        // - Mac Excel: December 31, 1903
+        // Most common is Windows Excel format
+        
+        // Excel serial number represents days since 1899-12-30
+        // We need to convert this to a JavaScript Date
+        const excelEpoch = new Date(1899, 11, 30); // December 30, 1899
+        date = new Date(excelEpoch.getTime() + (dateValue * 24 * 60 * 60 * 1000));
+        
+        // Handle Excel's leap year bug (1900 is not a leap year, but Excel thinks it is)
+        // This only affects dates before March 1, 1900
+        if (dateValue < 60) { // Before March 1, 1900
+          date = new Date(date.getTime() - (24 * 60 * 60 * 1000)); // Subtract one day
+        }
+      } else {
+        // Treat as a date string or Date object
+        date = new Date(dateValue);
+      }
+      
       if (isNaN(date.getTime())) {
         console.warn(`Invalid date at row ${rowIndex + 1}, field ${fieldName}: "${dateValue}"`);
         invalidDatesRef.push({ row: rowIndex + 1, field: fieldName, value: dateValue });
         return DEFAULT_DATE;
       }
+      
       // Format as YYYY-MM-DD which is compatible with .NET DateTime parsing
       const year = date.getUTCFullYear();
       const month = String(date.getUTCMonth() + 1).padStart(2, '0');
