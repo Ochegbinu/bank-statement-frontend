@@ -168,6 +168,7 @@ const BankStatementUploader = () => {
           </div>
         </div>
 
+
         <div className="file-input-wrapper">
           <input
             type="file"
