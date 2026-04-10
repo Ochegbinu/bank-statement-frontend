@@ -10,7 +10,6 @@ const BankStatementUploader = () => {
   const [successMessage, setSuccessMessage] = useState(null);
   const [bankCode, setBankCode] = useState("");
   const [transactionType, setTransactionType] = useState("");
-  const [invalidDateRows, setInvalidDateRows] = useState([]);
 
   const handleFileUpload = (event) => {
     const file = event.target.files[0];
@@ -28,11 +27,11 @@ const BankStatementUploader = () => {
 
       reader.onload = (e) => {
         const data = new Uint8Array(e.target.result);
-        const workbook = XLSX.read(data, { type: "array" });
+        const workbook = XLSX.read(data, { type: "array", cellDates: false });
 
         const allSheetData = workbook.SheetNames.map((sheetName) => {
           const worksheet = workbook.Sheets[sheetName];
-          const jsonData = XLSX.utils.sheet_to_json(worksheet);
+          const jsonData = XLSX.utils.sheet_to_json(worksheet, { raw: false });
 
           // Debug: Log available column names from Excel
           if (jsonData.length > 0) {
@@ -60,173 +59,28 @@ const BankStatementUploader = () => {
     });
   };
 
-  // Default date to use when date is invalid or missing (1900-01-01)
-  const DEFAULT_DATE = "1900-01-01";
-
-  // Helper to convert value to decimal (or null if empty/invalid)
-  const toDecimal = (value) => {
-    if (value === null || value === undefined || value === '') {
-      return null;
-    }
-    const num = Number(value);
-    return isNaN(num) ? null : num;
-  };
-
-  // Helper function to safely parse and validate dates
-  // Returns date in YYYY-MM-DD format which is universally accepted by .NET
-  const parseDateToString = (dateValue, rowIndex, fieldName, invalidDatesRef) => {
-    if (!dateValue && dateValue !== 0) {
-      return DEFAULT_DATE;
-    }
-
-    try {
-      let date;
-      
-      // Check if the value is a number (Excel serial date)
-      if (typeof dateValue === 'number') {
-        // Excel uses different epoch dates:
-        // - Windows Excel: December 30, 1899 (serial 0 = 1900-01-00)
-        // - Mac Excel: December 31, 1903
-        // Most common is Windows Excel format
-        
-        // Excel serial number represents days since 1899-12-30
-        // We need to convert this to a JavaScript Date
-        const excelEpoch = new Date(1899, 11, 30); // December 30, 1899
-        date = new Date(excelEpoch.getTime() + (dateValue * 24 * 60 * 60 * 1000));
-        
-        // Handle Excel's leap year bug (1900 is not a leap year, but Excel thinks it is)
-        // This only affects dates before March 1, 1900
-        if (dateValue < 60) { // Before March 1, 1900
-          date = new Date(date.getTime() - (24 * 60 * 60 * 1000)); // Subtract one day
-        }
-      } else {
-        // Treat as a date string or Date object
-        date = new Date(dateValue);
-      }
-      
-      if (isNaN(date.getTime())) {
-        console.warn(`Invalid date at row ${rowIndex + 1}, field ${fieldName}: "${dateValue}"`);
-        invalidDatesRef.push({ row: rowIndex + 1, field: fieldName, value: dateValue });
-        return DEFAULT_DATE;
-      }
-      
-      // Format as YYYY-MM-DD which is compatible with .NET DateTime parsing
-      const year = date.getUTCFullYear();
-      const month = String(date.getUTCMonth() + 1).padStart(2, '0');
-      const day = String(date.getUTCDate()).padStart(2, '0');
-      return `${year}-${month}-${day}`;
-    } catch (error) {
-      console.warn(`Error parsing date at row ${rowIndex + 1}, field ${fieldName}: "${dateValue}"`, error);
-      invalidDatesRef.push({ row: rowIndex + 1, field: fieldName, value: dateValue });
-      return DEFAULT_DATE;
-    }
-  };
-
   const processBankStatement = async (rows) => {
     try {
-      // const payload = mapToBankStatementDto(rows);
-      const invalidDatesRef = [];
-
       rows = rows.map((row, index) => {
-        // Convert dates
-        row.TxnDate = parseDateToString(row["TxnDate"], index, "TxnDate", invalidDatesRef)
-        row.ValueDate = parseDateToString(row["ValueDate"], index, "ValueDate", invalidDatesRef)
-        
-        // Convert ALL numeric fields to proper decimals for backend compatibility
-        row.Debit = toDecimal(row["Debit"]);
-        row.BankCharges = toDecimal(row["BankCharges"]);
-        row.DeferredRevenueRefund = toDecimal(row["DeferredRevenueRefund"]);
-        row.LicensingAndPermit = toDecimal(row["LicensingAndPermit"]);
-        row.StaffLoanAndAdvances = toDecimal(row["StaffLoanAndAdvances"]);
-        row.OperationalExpenses = toDecimal(row["OperationalExpenses"]);
-        row.FlightOperationExpenses = toDecimal(row["FlightOperationExpenses"]);
-        row.FreightExpenses = toDecimal(row["FreightExpenses"]);
-        row.AirportExpenses = toDecimal(row["AirportExpenses"]);
-        row.OfficeExpenses = toDecimal(row["OfficeExpenses"]);
-        row.OperationalStaffCost = toDecimal(row["OperationalStaffCost"]);
-        row.DieselAndFuel = toDecimal(row["DieselAndFuel"]);
-        row.CateringFees = toDecimal(row["CateringFees"]);
-        row.SecurityExp = toDecimal(row["SecurityExp"]);
-        row.RepairsAndMaintenanceOffice = toDecimal(row["RepairsAndMaintenanceOffice"]);
-        row.RepairsAndMaintAircraftParts = toDecimal(row["RepairsAndMaintAircraftParts"]);
-        row.RepairsAndMaintenanceMV = toDecimal(row["RepairsAndMaintenanceMV"]);
-        row.BrandingPublicity = toDecimal(row["BrandingPublicity"]);
-        row.CrewTraining = toDecimal(row["CrewTraining"]);
-        row.AviationFuel = toDecimal(row["AviationFuel"]);
-        row.CharterExpenses = toDecimal(row["CharterExpenses"]);
-        row.CharterCommission = toDecimal(row["CharterCommission"]);
-        row.NamaOtherCharges = toDecimal(row["NamaOtherCharges"]);
-        row.VisaFeeCerpacImmigrationODC1 = toDecimal(row["VisaFeeCerpacImmigrationODC"]);
-        row.PscChargesBicourtney = toDecimal(row["PscChargesBicourtney"]);
-        row.NcaaChargesCommandCheck = toDecimal(row["NcaaChargesCommandCheck"]);
-        row.VipLoungeServices = toDecimal(row["VipLoungeServices"]);
-        row.NamaNavigationalCharges = toDecimal(row["NamaNavigationalCharges"]);
-        row.FaanLandingCharges = toDecimal(row["FaanLandingCharges"]);
-        row.IataLandingAndSubscriptions = toDecimal(row["IataLandingAndSubscriptions"]);
-        row.CostOfSales = toDecimal(row["CostOfSales"]);
-        row.OtherCostOfSales = toDecimal(row["OtherCostOfSales"]);
-        row.CleaningAndSanitation = toDecimal(row["CleaningAndSanitation"]);
-        row.Salary = toDecimal(row["Salary"]);
-        row.StationElectricity = toDecimal(row["StationElectricity"]);
-        row.ComputerAndOfficeEquipment = toDecimal(row["ComputerAndOfficeEquipment"]);
-        row.FurnitureAndFittings = toDecimal(row["FurnitureAndFittings"]);
-        row.Entertainment = toDecimal(row["Entertainment"]);
-        row.TelephoneExpenses = toDecimal(row["TelephoneExpenses"]);
-        row.ProfessionalAndLegalFees = toDecimal(row["ProfessionalAndLegalFees"]);
-        row.AccrualNsitf = toDecimal(row["AccrualNsitf"]);
-        row.MarketingExpenses = toDecimal(row["MarketingExpenses"]);
-        row.Insurance = toDecimal(row["Insurance"]);
-        row.HotelAccommodation = toDecimal(row["HotelAccommodation"]);
-        row.OfficeExpenses2 = toDecimal(row["OfficeExpenses2"]);
-        row.MedicalExpensesOthers = toDecimal(row["MedicalExpensesOthers"]);
-        row.InternetServices = toDecimal(row["InternetServices"]);
-        row.OfficeRent = toDecimal(row["OfficeRent"]);
-        row.StationeryAndPrintingPapers = toDecimal(row["StationeryAndPrintingPapers"]);
-        row.PublicRelationExpenses = toDecimal(row["PublicRelationExpenses"]);
-        row.GiftAndDonations = toDecimal(row["GiftAndDonations"]);
-        row.Transport = toDecimal(row["Transport"]);
-        
-        return row;
+        return {
+          SerialNumber: row["SerialNumber"] != null ? String(row["SerialNumber"]) : "",
+          TxnDate: row["TxnDate"] != null ? String(row["TxnDate"]) : "",
+          ValueDate: row["ValueDate"] != null ? String(row["ValueDate"]) : "",
+          Narration: row["Narration"] != null ? String(row["Narration"]) : "",
+          RefNo: row["RefNo"] != null ? String(row["RefNo"]) : "",
+          Debit: row["Debit"] != null ? String(row["Debit"]) : "",
+          Credit: row["Credit"] != null ? String(row["Credit"]) : "",
+          DrErp: row["DrErp"] != null ? String(row["DrErp"]) : "",
+          CrErp: row["CrErp"] != null ? String(row["CrErp"]) : "",
+          Balance: row["Balance"] != null ? String(row["Balance"]) : "",
+          Comments: row["Comments"] != null ? String(row["Comments"]) : "",
+        };
       })
 
-      console.log(rows)
       const payload = rows;
 
-      // Debug: Log the first few and problematic entries
       console.log('Total rows being sent:', payload.length);
       console.log('Sample payload (first 3 rows):', JSON.stringify(payload.slice(0, 3), null, 2));
-
-      // Log TxnDate and ValueDate values for verification
-      console.log('Sample TxnDate/ValueDate values:');
-      payload.slice(0, 5).forEach((p, i) => {
-        console.log(`  Row ${i + 1}: TxnDate="${p.TxnDate}", ValueDate="${p.ValueDate}"`);
-      });
-
-      // Check for rows with default date (potential issues)
-      const defaultDateRows = payload.filter((p, i) => p.TxnDate === DEFAULT_DATE || p.ValueDate === DEFAULT_DATE);
-      if (defaultDateRows.length > 0) {
-        console.warn(`Found ${defaultDateRows.length} rows with default date (1900-01-01). These may need review.`);
-      }
-
-      // Check for any non-string TxnDate values
-      const invalidTxnDates = payload.filter((p, i) => {
-        return typeof p.TxnDate !== 'string' || p.TxnDate === '';
-      });
-      if (invalidTxnDates.length > 0) {
-        console.error('Found invalid TxnDate values:', invalidTxnDates.slice(0, 5));
-      }
-
-      // Warn user about invalid dates but still proceed
-      if (invalidDateRows.length > 0) {
-        const uniqueRows = [...new Set(invalidDateRows.map(d => d.row))];
-        const warningMsg = `Warning: ${invalidDateRows.length} invalid date(s) found in row(s): ${uniqueRows.slice(0, 10).join(', ')}${uniqueRows.length > 10 ? '...' : ''}. These will be set to a default date (1900-01-01).`;
-        console.warn(warningMsg);
-        setErrorMessage(warningMsg);
-        // Clear the warning after 10 seconds
-        setTimeout(() => {
-          setErrorMessage(null);
-        }, 10000);
-      }
 
       // Build query parameters
       const params = {};
@@ -249,9 +103,6 @@ const BankStatementUploader = () => {
       console.error("Error processing bank statement:", error);
       setErrorMessage("Error processing bank statement. Check your data format.");
       setSuccessMessage(null);
-    } finally {
-      // Clear invalid date rows after processing
-      setInvalidDateRows([]);
     }
   };
 
